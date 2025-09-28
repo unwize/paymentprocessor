@@ -22,3 +22,23 @@ Secondly, there's a big missed-opportunity to parallelize the processing for eac
 ## Streaming?
 
 This process is begging to be streamable. You can stream for a csv, or really any streamable source in an `async` context like `tokio` (or via std-rust, which is entirely usable) to save on memory. Streaming also allows you to utilize more-sophisticated techniques like task-queueing, load-balancing consumers, and utilizing distributed storage systems. They're entirely pointless in this contrived scenario, though.
+
+## Assumptions
+
+- An account has two types of _normal_ transactions: `deposit` and `withdrawal`.
+- `Normal` transactions may only be performed on accounts that are not locked.
+- An account has three types of _abnormal_ transactions: `dispute`, `resolve`, and `chargeback`.
+- `Abormal` transactions are affected by (hypothetical) regulations and may still be performed on locked accounts
+  - For example, a locked account may still be disputed and charged-back against
+- An account may have a negative balance. A negative balance **will not** occur as a result of a withdrawal. Negative balances only occur when the size of a dispute (or chargeback) is larger than the account's available balance.
+- `Abnormal` transactions submitted out of order against a `normal` transaction are considered invalid.
+  - `Resolve` and `Chargeback` transactions are only valid if a `Dispute` was performed previously.
+- `Dispute` transactions may not be opened against `Normal` transactions that have already been `Resolve`d.
+
+## Dependencies
+This project's top-level dependencies are:
+
+- Polars: DataFrame and CSV support
+- Anyhow: Error-wrangling
+- ThisError: Error defining
+- IterTools: Columnar-format wrangling
