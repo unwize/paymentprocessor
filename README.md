@@ -42,3 +42,10 @@ This project's top-level dependencies are:
 - Anyhow: Error-wrangling
 - ThisError: Error defining
 - IterTools: Columnar-format wrangling
+
+## Tested On
+Supported and tested on the following triples:
+
+- stable-x86_64-pc-windows-gnu
+- stable-x86_64-pc-windows-msvc
+- stable-x86_64-unknown-linux-gnu
