@@ -20,6 +20,15 @@ impl ClientAccount {
         self.available + self.held
     }
 
+    pub fn to_str_row(&self, client_id: u32) -> String {
+        format!("{}, {:.4}, {:.4}, {:.4}, {}",
+                client_id,
+                self.available,
+                self.held,
+                self.total(),
+                self.locked)
+    }
+
     /// Move a Transaction object into the `history` field and then apply logic to the account.
     /// Invalid transactions are dropped.
     pub fn apply_transaction(&mut self, transaction: Transaction) -> Result<(), KrakenError> {

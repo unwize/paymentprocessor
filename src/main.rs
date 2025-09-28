@@ -28,21 +28,9 @@ fn parse_csv(file_in: &str) -> Result<LazyFrame> {
         .finish()?) // Skipping rows in order to compensate for the lack of a `with_clean_column_names` method for lazy readers
 }
 
-fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        println!("Invalid arguments: Must supply path to data csv");
-        Err(Error)?
-    }
-
-    let path = Path::new(&args[1]);
-    if !path.exists() {
-        Err(KrakenError::IO)?
-    }
-
+fn compute_account_totals(path: &str) -> Result<HashMap<u32, ClientAccount>> {
     // Don't need to drop, since it's lazy and is memory-light
-    let lazy_data: LazyFrame = parse_csv(path.to_str().unwrap())?;
+    let lazy_data: LazyFrame = parse_csv(path)?;
 
     // Partition by client to simplify downstream logic. Not required, and may not yield any performance improvement.
     let parts = lazy_data.collect()?.partition_by(["client"], true)?;
@@ -91,16 +79,47 @@ fn main() -> Result<()> {
     println!("client, available, held, total, locked");
     for key in client_accounts.keys() {
         if let Some(account) = client_accounts.get(key) {
-            println!(
-                "{}, {:.4}, {:.4}, {:.4}, {}",
-                key,
-                account.available,
-                account.held,
-                account.total(),
-                account.locked
-            )
+            println!("{}", account.to_str_row(*key))
         }
     }
 
+    Ok(client_accounts)
+}
+
+fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        println!("Invalid arguments: Must supply path to data csv");
+        Err(Error)?
+    }
+
+    let path = Path::new(&args[1]);
+    if !path.exists() {
+        Err(KrakenError::IO)?
+    }
+
+    compute_account_totals(path.to_str().unwrap()).expect("");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::compute_account_totals;
+
+    const TEST_DIR: &str = "./test/";
+    const TEST_CASES: [(&str, &str); 4] = [
+        ("0-trivial.csv", "1, 1.5000, 0.0000, 1.5000, false"),
+        ("1-dispute-after-withdraw.csv", "1, -9.5000, 10.0000, 0.5000, false"),
+        ("2-chargeback-after-withdraw.csv", "1, -9.5000, 0.0000, -9.5000, true"),
+        ("3-resolve-without-dispute.csv", "1, 11.0000, 0.0000, 11.0000, false")
+    ];
+    #[test]
+    fn test_csv() {
+        for (file_name, expected) in TEST_CASES {
+            let totals = compute_account_totals((String::from(TEST_DIR) + file_name).as_str()).unwrap();
+            assert_eq!(String::from(expected), totals.get(&1).expect("").to_str_row(1))
+        }
+    }
+
 }
