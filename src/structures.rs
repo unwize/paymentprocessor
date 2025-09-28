@@ -1,9 +1,13 @@
 use crate::errors::KrakenError;
-use crate::errors::KrakenError::{AccountLocked, DisputeStateError, InsufficientFunds};
+use crate::errors::KrakenError::{
+    AccountLocked, DisputeStateError, InsufficientFunds, NoSuchTransactionError,
+};
 use std::collections::HashMap;
 
 /// Running stats for a Client's account.
 /// Does not store individual transactions, just the overall state of the account.
+
+#[derive(Debug, Default)]
 pub struct ClientAccount {
     pub available: f64,
     pub held: f64,
@@ -25,7 +29,7 @@ impl ClientAccount {
                     return Err(AccountLocked(transaction.client));
                 }
 
-                self.available += transaction.amount;
+                self.available += transaction.amount.expect("Amount may not be null for Deposits!");
 
                 self.history.insert(transaction.tx, transaction); // Move to history
                 Ok(())
@@ -35,17 +39,17 @@ impl ClientAccount {
                     return Err(AccountLocked(transaction.client));
                 }
 
-                if self.available < transaction.amount {
+                if self.available < transaction.amount.expect("Amount may not be null for Withdrawals!") {
                     return Err(InsufficientFunds(transaction.client));
                 }
 
-                self.available -= transaction.amount;
+                self.available -= transaction.amount.expect("Amount may not be null for Withdrawals!");
 
                 self.history.insert(transaction.tx, transaction); // Move to history
                 Ok(())
             }
             TransactionType::Dispute => {
-                // Allow locked accounts to still dispute
+                // Allow locked accounts to still dispute.
                 if let Some(transaction) = self.history.get_mut(&transaction.tx) {
                     if transaction.state.is_some() {
                         return Err(DisputeStateError(String::from(
@@ -53,14 +57,53 @@ impl ClientAccount {
                         )));
                     }
 
+                    if transaction.kind != TransactionType::Deposit {
+                        return Err(KrakenError::Error)
+                    }
+
                     transaction.state = Some(TransactionType::Dispute);
-                    self.available -= transaction.amount;
-                    self.held += transaction.amount;
+                    self.available -= transaction.amount.expect("Amount may not be null for Deposits!");
+                    self.held += transaction.amount.expect("Amount may not be null for Disputes!");
+
                     Ok(())
+                } else {
+                    Err(NoSuchTransactionError(transaction.tx))
                 }
             }
-            TransactionType::Resolve => {}
-            TransactionType::Chargeback => {}
+            TransactionType::Resolve => {
+                if let Some(transaction) = self.history.get_mut(&transaction.tx) {
+                    match transaction.state {
+                        Some(TransactionType::Dispute) => {
+                            transaction.state = Some(TransactionType::Resolve);
+                            self.available += transaction.amount.expect("Amount may not be null for Deposits");
+                            self.held -= transaction.amount.expect("Amount may not be null for Deposits!");
+                            Ok(())
+                        }
+                        _ => Err(DisputeStateError(String::from(
+                            "Cannot resolve transaction not in dispute",
+                        ))),
+                    }
+                } else {
+                    Err(NoSuchTransactionError(transaction.tx))
+                }
+            }
+            TransactionType::Chargeback => {
+                if let Some(transaction) = self.history.get_mut(&transaction.tx) {
+                    match transaction.state {
+                        Some(TransactionType::Dispute) => {
+                            transaction.state = Some(TransactionType::Chargeback);
+                            self.held -= transaction.amount.expect("Amount may not be null for deposits");
+                            self.locked = true;
+                            Ok(())
+                        }
+                        _ => Err(DisputeStateError(String::from(
+                            "Cannot chargeback transaction not in dispute",
+                        ))),
+                    }
+                } else {
+                    Err(NoSuchTransactionError(transaction.tx))
+                }
+            }
         }
     }
 }
@@ -111,7 +154,7 @@ impl TryFrom<&str> for TransactionType {
 pub struct Transaction {
     pub kind: TransactionType,
     pub client: u32,
-    pub amount: f64,
+    pub amount: Option<f64>,
     pub tx: u32,
     pub state: Option<TransactionType>,
 }

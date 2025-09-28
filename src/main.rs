@@ -47,10 +47,9 @@ fn main() -> Result<()> {
     // Partition by client to simplify downstream logic. Not required, and may not yield any performance improvement.
     let parts = lazy_data.collect()?.partition_by(["client"], true)?;
 
-    let client_accounts: HashMap<u32, ClientAccount> = HashMap::new(); // Master collection of accounts
+    let mut client_accounts: HashMap<u32, ClientAccount> = HashMap::new(); // Master collection of accounts
 
     for df in &parts {
-        println!("{:?}", df);
         // Use individual synchronized iterators for each column. Iterating by row is a discouraged
         // antipattern, as the docs/stackoverflow made abundantly clear.
 
@@ -69,13 +68,38 @@ fn main() -> Result<()> {
                 kind: TransactionType::try_from(kind.expect("Type may not be null"))
                     .expect(format!("Invalid transaction type: {:#?}", kind).as_str()),
                 client: client.expect("client may not be null"),
-                amount: amount.expect(""),
+                amount: amount,
                 tx: tx.expect(""),
                 state: None,
             })
             .collect();
 
-        println!("{:#?}", transaction_objects)
+        let client_id = transaction_objects[0].client;
+        let mut account: ClientAccount = Default::default();
+
+        for transaction in transaction_objects {
+            // Swallow results since we aren't tracking them
+            match account.apply_transaction(transaction) {
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        }
+
+        client_accounts.insert(client_id, account);
+    }
+
+    println!("client, available, held, total, locked");
+    for key in client_accounts.keys() {
+        if let Some(account) = client_accounts.get(key) {
+            println!(
+                "{}, {:.4}, {:.4}, {:.4}, {}",
+                key,
+                account.available,
+                account.held,
+                account.total(),
+                account.locked
+            )
+        }
     }
 
     Ok(())
