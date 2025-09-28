@@ -17,6 +17,12 @@ pub enum KrakenError {
     #[error("No Such Transaction Error: {0}")]
     NoSuchTransactionError(String),
 
+    #[error("Account is locked: {0}")]
+    AccountLocked(u32),
+
+    #[error("Insufficient Funds for account: {0}")]
+    InsufficientFunds(u32),
+
     #[error("Error")]
     Error,
 }
