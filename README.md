@@ -54,3 +54,9 @@ Supported and tested on the following triples:
 You can find bite-sized test files in `/test`. Test them with `cargo test`.
 
 There were more minor edge cases (duplicate chargeback, resolve, dispute, etc) that I tested by hand. 
+
+## Safety and Robustness
+
+IO is always unsafe, to a certain degree. I have very little robustness, beyond verifying that the target `csv` exists.
+
+I'm generating, but swallowing errors. As it stands, I _could_ record and trace errors for all sorts of things, from flow errors in the dispute process, to rejected withdrawals, and more. I don't log them since you're automating the process by watching stdout.
