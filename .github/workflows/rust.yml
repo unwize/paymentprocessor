@@ -1,44 +1,32 @@
-name: Rust
+name: Test
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+on: [push, pull_request]
 
-env:
-
-  CARGO_TERM_COLOR: always
+permissions: {}
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
-      name: Test `cargo check/test/build` on ${{ matrix.os }}
-      runs-on: ${{ matrix.os }}
+    name: Test `cargo check/test/build` on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
 
-      env:
-        CARGO_TERM_COLOR: always
+    env:
+      CARGO_TERM_COLOR: always
 
-      steps:
-        - uses: Swatinem/rust-cache@v2.8.1
-          with:
-            persist-credentials: false
+    steps:
+      - uses: actions/checkout@v5
 
-        - run: rustup toolchain install stable --profile minimal --no-self-update
+      - run: rustup toolchain install stable --profile minimal --no-self-update
 
-        - uses: ./
-          with:
-            workspaces: tests
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tests
 
-        - run: |
-            cargo check
-            cargo test
-            cargo build --release
-
-
-
-
+      - run: |
+          cargo check
+          cargo test
+          cargo build --release
