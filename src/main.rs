@@ -122,5 +122,4 @@ mod tests {
             assert_eq!(String::from(expected), totals.get(&1).expect("").to_str_row(1))
         }
     }
-
 }
