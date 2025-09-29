@@ -43,15 +43,14 @@ This project's top-level dependencies are:
 - ThisError: Error defining
 - IterTools: Columnar-format wrangling
 
-## Tested On
+## Tested On, Tested With
 Supported and tested on the following triples:
 
 - stable-x86_64-pc-windows-gnu
 - stable-x86_64-pc-windows-msvc
 - stable-x86_64-unknown-linux-gnu
 
-## Testing Correctness
-You can find bite-sized test files in `/test`. Test them with `cargo test`.
+You can find bite-sized test files in `/test`. Test them with `cargo test`. There's a rudimentary CI pipeline in place via Github Actions that checks, builds, and tests `main`.
 
 There were more minor edge cases (duplicate chargeback, resolve, dispute, etc) that I tested by hand. 
 
