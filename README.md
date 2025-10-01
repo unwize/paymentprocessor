@@ -42,6 +42,7 @@ This project's top-level dependencies are:
 - Anyhow: Error-wrangling
 - ThisError: Error defining
 - IterTools: Columnar-format wrangling
+- Crossbeam: Scoped threads
 
 ## Tested On, Tested With
 Supported and tested on the following triples:

@@ -123,12 +123,13 @@ mod tests {
     use crate::compute_account_totals;
 
     const TEST_DIR: &str = "./test/";
-    const TEST_CASES: [(&str, &str); 5] = [
+    const TEST_CASES: [(&str, &str); 6] = [
         ("0-trivial.csv", "1, 1.5000, 0.0000, 1.5000, false"),
         ("1-dispute-after-withdraw.csv", "1, -9.5000, 10.0000, 0.5000, false"),
         ("2-chargeback-after-withdraw.csv", "1, -9.5000, 0.0000, -9.5000, true"),
         ("3-resolve-without-dispute.csv", "1, 11.0000, 0.0000, 11.0000, false"),
-        ("4-oversized-withdrawal.csv", "1, 100.0000, 0.0000, 100.0000, false")
+        ("4-oversized-withdrawal.csv", "1, 100.0000, 0.0000, 100.0000, false"),
+        ("5-very-parallel.csv", "1, 10.0000, 0.0000, 10.0000, false")
     ];
     #[test]
     fn test_csv() {
