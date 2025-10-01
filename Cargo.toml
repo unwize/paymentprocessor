@@ -8,3 +8,4 @@ anyhow = "1.0.100"
 polars = { version = "0.51.0", features = ["lazy", "dtype-struct"] }
 thiserror = "2.0.16"
 itertools = "0.14.0"
+crossbeam-utils = "0.8.21"

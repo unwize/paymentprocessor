@@ -10,7 +10,8 @@ use polars::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
-use std::{env, thread};
+use std::{env};
+use crossbeam_utils::thread;
 
 // I debated between this LazyFrame implementation and streaming with `csv-async`. This was far less
 // verbose and might actually tolerate very-large datasets.
@@ -34,7 +35,7 @@ fn compute_account_totals(path: &str) -> Result<Arc<Mutex<HashMap<u32, ClientAcc
     let lazy_data: LazyFrame = parse_csv(path)?;
 
     // Partition by client to simplify downstream logic. Not required, and may not yield any performance improvement.
-    let parts = Arc::new(lazy_data.collect()?.partition_by(["client"], true)?);
+    let parts = lazy_data.collect()?.partition_by(["client"], true)?;
 
     // Wrap the HashMap in an multi-threaded ref counter and simple lock
     let client_accounts: Arc<Mutex<HashMap<u32, ClientAccount>>> = Arc::new(Mutex::new(HashMap::new())); // Master collection of accounts
@@ -43,10 +44,9 @@ fn compute_account_totals(path: &str) -> Result<Arc<Mutex<HashMap<u32, ClientAcc
     let mut handles = vec![];
 
     for df in &*parts {
-
         // Clone the ref counter
         let accounts = client_accounts.clone();
-        let handle = thread::spawn(move || {
+        let handle = thread::scope(|s| {
 
             // Use individual synchronized iterators for each column. Iterating by row is a discouraged
             // antipattern, as the docs/stackoverflow made abundantly clear.
@@ -88,10 +88,6 @@ fn compute_account_totals(path: &str) -> Result<Arc<Mutex<HashMap<u32, ClientAcc
         });
 
         handles.push(handle);
-    }
-
-    for handle in handles {
-        handle.join().unwrap();
     }
 
     let account_lock = client_accounts.lock().unwrap();
@@ -138,7 +134,7 @@ mod tests {
     fn test_csv() {
         for (file_name, expected) in TEST_CASES {
             let totals = compute_account_totals((String::from(TEST_DIR) + file_name).as_str()).unwrap();
-            assert_eq!(String::from(expected), totals.get(&1).expect("").to_str_row(1))
+            assert_eq!(String::from(expected), totals.lock().unwrap().get(&1).expect("").to_str_row(1))
         }
     }
 }
