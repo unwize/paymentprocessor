@@ -8,8 +8,9 @@ use anyhow::Result;
 use itertools::multizip;
 use polars::prelude::*;
 use std::collections::HashMap;
-use std::env;
 use std::path::Path;
+use std::sync::Mutex;
+use std::{env, thread};
 
 // I debated between this LazyFrame implementation and streaming with `csv-async`. This was far less
 // verbose and might actually tolerate very-large datasets.
@@ -28,62 +29,80 @@ fn parse_csv(file_in: &str) -> Result<LazyFrame> {
         .finish()?) // Skipping rows in order to compensate for the lack of a `with_clean_column_names` method for lazy readers
 }
 
-fn compute_account_totals(path: &str) -> Result<HashMap<u32, ClientAccount>> {
+fn compute_account_totals(path: &str) -> Result<Arc<Mutex<HashMap<u32, ClientAccount>>>> {
     // Don't need to drop, since it's lazy and is memory-light
     let lazy_data: LazyFrame = parse_csv(path)?;
 
     // Partition by client to simplify downstream logic. Not required, and may not yield any performance improvement.
-    let parts = lazy_data.collect()?.partition_by(["client"], true)?;
+    let parts = Arc::new(lazy_data.collect()?.partition_by(["client"], true)?);
 
-    let mut client_accounts: HashMap<u32, ClientAccount> = HashMap::new(); // Master collection of accounts
+    // Wrap the HashMap in an multi-threaded ref counter and simple lock
+    let client_accounts: Arc<Mutex<HashMap<u32, ClientAccount>>> = Arc::new(Mutex::new(HashMap::new())); // Master collection of accounts
 
-    for df in &parts {
-        // Use individual synchronized iterators for each column. Iterating by row is a discouraged
-        // antipattern, as the docs/stackoverflow made abundantly clear.
+    // Collect a list of thread handles to join and prevent dangling threads from dying as main is terminated
+    let mut handles = vec![];
 
-        let columns = df.columns(["type", "client", "tx", "amount"])?;
+    for df in &*parts {
 
-        let type_col_iter = columns[0].str()?.iter();
-        let client_col_iter = columns[1].u32()?.iter(); // Using U32 due to limitations on the CSV reader's functionality
-        let tx_col_iter = columns[2].u32()?.iter();
-        let amount_col_iter = columns[3].f64()?.iter();
+        // Clone the ref counter
+        let accounts = client_accounts.clone();
+        let handle = thread::spawn(move || {
 
-        let full_row_iter =
-            multizip((type_col_iter, client_col_iter, tx_col_iter, amount_col_iter));
+            // Use individual synchronized iterators for each column. Iterating by row is a discouraged
+            // antipattern, as the docs/stackoverflow made abundantly clear.
 
-        let transaction_objects: Vec<Transaction> = full_row_iter
-            .map(|(kind, client, tx, amount)| Transaction {
-                kind: TransactionType::try_from(kind.expect("Type may not be null"))
-                    .expect(format!("Invalid transaction type: {:#?}", kind).as_str()),
-                client: client.expect("client may not be null"),
-                amount: amount,
-                tx: tx.expect(""),
-                state: None,
-            })
-            .collect();
+            let columns = df.columns(["type", "client", "tx", "amount"]).unwrap();
 
-        let client_id = transaction_objects[0].client;
-        let mut account: ClientAccount = Default::default();
+            let type_col_iter = columns[0].str().unwrap().iter();
+            let client_col_iter = columns[1].u32().unwrap().iter(); // Using U32 due to limitations on the CSV reader's functionality
+            let tx_col_iter = columns[2].u32().unwrap().iter();
+            let amount_col_iter = columns[3].f64().unwrap().iter();
 
-        for transaction in transaction_objects {
-            // Swallow results since we aren't tracking them
-            match account.apply_transaction(transaction) {
-                Ok(_) => {}
-                Err(_) => {}
+            let full_row_iter =
+                multizip((type_col_iter, client_col_iter, tx_col_iter, amount_col_iter));
+
+            let transaction_objects: Vec<Transaction> = full_row_iter
+                .map(|(kind, client, tx, amount)| Transaction {
+                    kind: TransactionType::try_from(kind.expect("Type may not be null"))
+                        .expect(format!("Invalid transaction type: {:#?}", kind).as_str()),
+                    client: client.expect("client may not be null"),
+                    amount,
+                    tx: tx.expect(""),
+                    state: None,
+                })
+                .collect();
+
+            let client_id = transaction_objects[0].client;
+            let mut account: ClientAccount = Default::default();
+
+            for transaction in transaction_objects {
+                // Swallow results since we aren't tracking them
+                match account.apply_transaction(transaction) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
             }
-        }
 
-        client_accounts.insert(client_id, account);
+            let mut accounts_lock = accounts.lock().unwrap();
+            accounts_lock.insert(client_id, account);
+        });
+
+        handles.push(handle);
     }
 
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    let account_lock = client_accounts.lock().unwrap();
     println!("client, available, held, total, locked");
-    for key in client_accounts.keys() {
-        if let Some(account) = client_accounts.get(key) {
+    for key in account_lock.keys() {
+        if let Some(account) = account_lock.get(key) {
             println!("{}", account.to_str_row(*key))
         }
     }
 
-    Ok(client_accounts)
+    Ok(client_accounts.clone())
 }
 
 fn main() -> Result<()> {
